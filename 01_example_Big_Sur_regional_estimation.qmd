@@ -20,12 +20,12 @@ The embedded computer code below sets up the R computing environment by adding s
 library(tidyverse) # various useful Hadley-Wickham resources
 library(readxl)    # for importing excel files
 library(FSA)       # Simple Fisheries Stock Assessment Methods (for depletion estimator)
-
+options(scipen=999) # suppresses scientific notation
 ```
 
 ### Target of estimation
 
-The target of estimation is the Big Sur Coast BPG, which Matt reports to have 141 km of accessible habitat, divided into a sample frame of 691 short reaches. 
+The target of estimation is the Big Sur Coast BPG, which Matt reports to have 141 km of accessible habitat, divided into a sample frame of 691 short reaches.
 
 ```{r target}
 sumL1_m <- 141000   # total length of all short reaches, in meters
@@ -33,6 +33,7 @@ N <- 691            # number of short reaches
 L1_bar <- sumL1_m/N # mean length of short reach
 L1_bar
 ```
+
 The mean reach length `L1_bar` is `r round(L1_bar)` meters. Notice that `L1` is the total length of a short reach, as measured in the GIS of the sampling frame. Below we will also use `L2`, the measured length of stream sampled between the two block nets, which is usually less than `L1`.
 
 ### Reach-level abundances
@@ -75,7 +76,7 @@ So there were a total `n` of `r n` reaches sampled out of the `r N` of the sampl
 fw <- n/n   # fraction of wet reaches
 ```
 
-Now I loop through the sites and compute a depletion estimate for each site, using the `removal` function in package `FSA
+Now I loop through the sites and compute a depletion estimate for each site, using the `removal` function in package \`FSA
 
 ```{r depletion}
 # create empty vectors
@@ -99,7 +100,6 @@ Here are the estimates and standard errors:
 ```{r echo=FALSE}
 print(data.frame(site, M_hat=M_hat, SE_M_hat=sqrt(V_M_hat)))
 ```
-
 
 ### Make the regional estimate of density
 
@@ -147,7 +147,7 @@ Now I'll use these data to make a regional estimate as in "Abundance of Rainbow 
 Following through on the instructions on page 104, we already have the results from Eqns. 6 & 7, `M_hat` and `V_M_hat` from our calculations above. Now we need the counts of captured fish as in Eqns. 27 and 28. The formulas given are for mark-recapture, but really these are just the total number of fish handled at each site (Eqn. 27), and the number handled that meet some criteria for adulthood (Eqn. 28). On page 46 of FB182 we developed a simple scheme for adulthood (adult rainbow trout) based on Fork Length:
 
 |                          |                                                         |
-|----------------------|--------------------------------------------------|
+|-----------------------|------------------------------------------------|
 | Fork Length \< 150 mm    | Mostly immature fish, some precocious males             |
 | Fork Length 150 - 200 mm | Enigmatic; some adults, some presmolts, some large parr |
 | Fork Length \> 200 mm    | Mostly adult rainbow trout; some presmolts              |
@@ -175,8 +175,7 @@ print(counts)
 
 As you can see, most of the sites have zero adults. One of the nice things about the ratio estimators are that all these zeros do not produce a large distortion in the estimates.
 
-So, now I estimate the 1D density of adults (rainbow trout per meter of stream channel), using Eqn. 29 in FB182, and then multiply it by total wetted channel length to get the estimate for total adult rainbow trout in the Big Sur 
-
+So, now I estimate the 1D density of adults (rainbow trout per meter of stream channel), using Eqn. 29 in FB182, and then multiply it by total wetted channel length to get the estimate for total adult rainbow trout in the Big Sur
 
 ```{r trout abundance}
 
@@ -186,6 +185,7 @@ Tr_hat <- N*fw*L1_bar*Dr_hat                      # estimated total, FB182 equat
 Tr_hat
 
 ```
+
 And now the calculations for standard error:
 
 ```{r trout error}
@@ -209,7 +209,109 @@ c(Tr_hat, Tr_l95, Tr_u95)
 
 So, in the Big Sur region, the total abundance of Rainbow Trout was `r round(Tr_hat)` adult residents, with a standard error of `r round(sqrt(Vtr))` and 95% confidence limits of {`r round(Tr_l95)`, `r round(Tr_u95)`}. Note that the lower limit is negative, which is impossible and reflects that the formula for confidence intervals is approximate. Of course, we can sum up the `a`'s and determine that the minimum abundance is `r sum(a)`.
 
-The coefficient of variation (the SE scaled as percent of the mean) is `r round(100*(sqrt(Vtr)/Tr_hat), 1)`%, which is significantly higher than the coeffient of variation for density, `r round(100*(sqrt(Vdw)/Dw_hat), 1)`%. This is a typical and inevitable feature of estimating totals versus densities, arising from equation 33 in FB182. 
+The coefficient of variation (the SE scaled as percent of the mean) is `r round(100*(sqrt(Vtr)/Tr_hat), 1)`%, which is significantly higher than the coeffient of variation for density, `r round(100*(sqrt(Vdw)/Dw_hat), 1)`%. This is a typical and inevitable feature of estimating total adults versus densities off all fish.
+
+### Make the regional estimates of the other size classes (enigmatic, juvenile)
+
+For completeness, here are regional estimates of the the other two size classes.
+
+```{r other abundance}
+# enigmatic
+Den_hat <- sum(en)*sum(M_hat)/(sum(m)*sum(L2_m))  # estimated density, FB182 equation 29 
+Ten_hat <- N*fw*L1_bar*Den_hat                    # estimated total, FB182 equation 30
+# enigmatic
+Dj_hat <- sum(j)*sum(M_hat)/(sum(m)*sum(L2_m))    # estimated density, FB182 equation 29 
+Tj_hat <- N*fw*L1_bar*Dj_hat                      # estimated total, FB182 equation 30
+```
+
+And now the calculations for standard error:
+
+```{r other error}
+# enigmatic
+Vr3 <- (1/(n-1))*sum((M_hat*en-Den_hat*L2_m*m)^2)  # ratio variance, FB182 equation 31
+m_bar=mean(m)                                    # mean catch
+# sample variance for adult linear density, FB182 equation 32
+Vden <- (1/(L2_bar*m_bar)^2)*(Vr3*(((N*fw)-n)/(n*N*fw))+(Vm/(N*fw)))
+# sample variance for total adult abundance, FB182 equation 33
+Vten <- Vden*(N*fw*L1_bar)^2
+# finally, the 95% confidence intervals from equation 12, using the t-distribution
+Ten_l95 <- Ten_hat + sqrt(Vten)*qt(0.5-95/200, n-1)
+Ten_u95 <- Ten_hat + sqrt(Vten)*qt(0.5+95/200, n-1)
+
+# juvenile
+Vr3 <- (1/(n-1))*sum((M_hat*j-Dj_hat*L2_m*m)^2)  # ratio variance, FB182 equation 31
+m_bar=mean(m)                                    # mean catch
+# sample variance for adult linear density, FB182 equation 32
+Vdj <- (1/(L2_bar*m_bar)^2)*(Vr3*(((N*fw)-n)/(n*N*fw))+(Vm/(N*fw)))
+# sample variance for total adult abundance, FB182 equation 33
+Vtj <- Vdj*(N*fw*L1_bar)^2
+# finally, the 95% confidence intervals from equation 12, using the t-distribution
+Tj_l95 <- Tj_hat + sqrt(Vtj)*qt(0.5-95/200, n-1)
+Tj_u95 <- Tj_hat + sqrt(Vtj)*qt(0.5+95/200, n-1)
+
+```
+
+For the Big Sur region, this gives total abundances of:
+
+| Group       | Total              | SE                    | 95% CI                                   | CV                                      |
+|-------------|-------------|-------------|-----------------|-----------------|
+| Adult Trout | `r round(Tr_hat)`  | `r round(sqrt(Vtr))`  | {`r round(Tr_l95)`, `r round(Tr_u95)`}   | `r round(100*(sqrt(Vtr)/Tr_hat), 1)`%   |
+| Enigmatic   | `r round(Ten_hat)` | `r round(sqrt(Vten))` | {`r round(Ten_l95)`, `r round(Ten_u95)`} | `r round(100*(sqrt(Vten)/Ten_hat), 1)`% |
+| Juvenile    | `r round(Tj_hat)`  | `r round(sqrt(Vtj))`  | {`r round(Tj_l95)`, `r round(Tj_u95)`}   | `r round(100*(sqrt(Vtj)/Tj_hat), 1)`%   |
+
+In this dataset, each successive group is about 10x bigger than the previous, but its uncertainty (coefficient of variation) only shrinks by about 15 percentage points.
+
+### Power analysis
+
+Let's say you want a more precise estimate of rainbow trout abundance. How much more sampling would you need to do?\
+A simple way to answer this question is to simply double or triple the existing dataset, and see how it affects the coefficient of variation. So let's do that for adult rainbow trout, which is the least precise estimate.
+
+```{r power}
+# doubling or tripling doesn't effect the means, so leave them as-is
+# since Vm is a mean of variances, it is also unchanged by doubling
+# doubling
+i <- 2
+Vr32 <- (1/(i*n-1))*sum(i*((M_hat*a-Dr_hat*L2_m*m)^2))     # ratio variance
+# sample variance for adult linear density
+Vdr2 <- (1/(L2_bar*m_bar)^2)*(Vr32*(((N*fw)-(i*n))/((i*n)*N*fw))+(Vm/(N*fw)))
+# sample variance for total adult abundance
+Vtr2 <- Vdr2*(N*fw*L1_bar)^2
+# CV
+CVtr  <- round(100*(sqrt(Vtr)/Tr_hat), 1)
+CVtr2 <- round(100*(sqrt(Vtr2)/Tr_hat), 1)
+
+# tripling
+i <- 3
+Vr33 <- (1/(i*n-1))*sum(i*((M_hat*a-Dr_hat*L2_m*m)^2))     # ratio variance
+# sample variance for adult linear density
+Vdr3 <- (1/(L2_bar*m_bar)^2)*(Vr33*(((N*fw)-(i*n))/((i*n)*N*fw))+(Vm/(N*fw)))
+# sample variance for total adult abundance
+Vtr3 <- Vdr3*(N*fw*L1_bar)^2
+# CV
+CVtr3 <- round(100*(sqrt(Vtr3)/Tr_hat), 1)
+
+# quadrupling
+i <- 4
+Vr34 <- (1/(i*n-1))*sum(i*((M_hat*a-Dr_hat*L2_m*m)^2))     # ratio variance
+# sample variance for adult linear density
+Vdr4 <- (1/(L2_bar*m_bar)^2)*(Vr34*(((N*fw)-(i*n))/((i*n)*N*fw))+(Vm/(N*fw)))
+# sample variance for total adult abundance
+Vtr4 <- Vdr4*(N*fw*L1_bar)^2
+# CV
+CVtr4 <- round(100*(sqrt(Vtr4)/Tr_hat), 1)
+
+```
+
+Results:
+
+| Sample Size |     CV     |
+|-------------|------------|
+| `r n`       | `r CVtr`%  |
+| `r 2*n`     | `r CVtr2`% |
+| `r 3*n`     | `r CVtr3`% |
+| `r 4*n`     | `r CVtr4`% |
+
+
 
 
 ## References
@@ -217,6 +319,3 @@ The coefficient of variation (the SE scaled as percent of the mean) is `r round(
 Boughton, D. A., J. Nelson and M. K. Lacy (2022). "Integration of steelhead viability monitoring, recovery plans and fisheries management in the southern coastal area." Fish Bulletin 182. State of California, Department of Fish and Game. Available from <https://nrm.dfg.ca.gov/FileHandler.ashx?DocumentID=199225>
 
 Thompson, S. K. (2012). Sampling, third edition. Hoboken, NJ, USA, John Wiley & Sons, Inc.
-
-
-
